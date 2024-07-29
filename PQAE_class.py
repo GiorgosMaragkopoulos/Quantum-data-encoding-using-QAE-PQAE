@@ -5,6 +5,15 @@ Created on Mon Jul 29 13:11:13 2024
 @author: katerina
 """
 
+import torch.nn as nn
+import torch
+from qiskit.primitives import Sampler
+from qiskit_machine_learning.kernels import FidelityQuantumKernel
+from qiskit_algorithms.state_fidelities import ComputeUncompute
+from qiskit.circuit.library import ZZFeatureMap
+from sklearn.decomposition import KernelPCA
+
+
 
 # define the NN architecture
 class PQAE(nn.Module):
