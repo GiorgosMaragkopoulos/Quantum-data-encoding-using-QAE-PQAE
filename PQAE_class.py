@@ -1,120 +1,95 @@
-{
- "cells": [
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "id": "f2c63fba",
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "class PQAE(nn.Module):\n",
-    "    def __init__(self,input_dim,n_qubits,n_pca):\n",
-    "        super(PQAE, self).__init__()\n",
-    "\n",
-    "        self.input_dim = input_dim\n",
-    "        self.n_qubits = n_qubits\n",
-    "        self.n_pca = n_pca\n",
-    "        \n",
-    "        ## encoder ##\n",
-    "        self.input = nn.Linear(self.input_dim, self.n_qubits, dtype=torch.float64)\n",
-    "\n",
-    "        ## decoder ##\n",
-    "        self.decoder = nn.Linear(self.n_pca,self.input_dim, dtype=torch.float64)\n",
-    "\n",
-    "\n",
-    "        # Define the qubit states as column vectors\n",
-    "        self.q0 = torch.tensor([[1], [0]], dtype=torch.cfloat)\n",
-    "        self.q1 = torch.tensor([[0], [1]], dtype=torch.cfloat)\n",
-    "\n",
-    "        # Define the Pauli matrices\n",
-    "        self.sigma1 = torch.tensor([[1, 0], [0, 1]], dtype=torch.complex64)\n",
-    "        self.sigma2 = torch.tensor([[0, 1], [1, 0]], dtype=torch.complex64)\n",
-    "        self.sigma3 = torch.tensor([[0, -1j], [1j, 0]], dtype=torch.complex64)\n",
-    "        self.sigma4 = torch.tensor([[1, 0], [0, -1]], dtype=torch.complex64)\n",
-    "\n",
-    "        self.hadamard_gate = 1 / torch.sqrt(torch.tensor(2) ) * torch.tensor([[1, 1], [1, -1]], dtype=torch.complex64)\n",
-    "\n",
-    "        # Define the CNOT gate\n",
-    "        self.cnot_gate = torch.tensor([[1, 0, 0, 0],\n",
-    "                                       [0, 1, 0, 0],\n",
-    "                                       [0, 0, 0, 1],\n",
-    "                                       [0, 0, 1, 0]], dtype=torch.complex64)\n",
-    "\n",
-    "\n",
-    "\n",
-    "        # Collect the Pauli matrices in a list\n",
-    "        self.generators = [ self.sigma2, self.sigma3, self.sigma4 ]\n",
-    "\n",
-    "\n",
-    "\n",
-    "    def forward(self, x):\n",
-    "        # define feedforward behavior\n",
-    "        x = self.input(x)    # Here the data are reduced from 64 to 4, which is the number of qubits\n",
-    "\n",
-    "        sampler = Sampler()     # Initialize a sampler which samples from the quantum circuit.\n",
-    "        fidelity = ComputeUncompute(sampler=sampler) # ComputeUncompute is a method that uses the compute-uncompute technique to estimate the fidelity.\n",
-    "\n",
-    "        # The ZZFeatureMap maps classical data to a quantum state. The 'feature_dimension' parameter specifies the\n",
-    "        # dimensionality of the input data, and 'reps' indicates the number of repetitions of the feature map.\n",
-    "        feature_map = ZZFeatureMap(feature_dimension=self.n_qubits, reps=1)\n",
-    "\n",
-    "        # Initialize the quantum kernel with the specified fidelity computation method and feature map.\n",
-    "        # The FidelityQuantumKernel calculates the kernel matrix for quantum data using the fidelity metric.\n",
-    "        qpca_kernel = FidelityQuantumKernel(fidelity=fidelity, feature_map=feature_map)\n",
-    "\n",
-    "        # Evaluate the kernel matrix for the training data.\n",
-    "        # x.detach().numpy() converts the input tensor 'x' to a numpy array.\n",
-    "        matrix_train = qpca_kernel.evaluate(x_vec=x.detach().numpy())\n",
-    "\n",
-    "        # Initialize KernelPCA with the number of components and kernel type.\n",
-    "        # KernelPCA is a variant of Principal Component Analysis that uses kernel methods to perform\n",
-    "        # dimensionality reduction in high-dimensional feature spaces. The 'precomputed' kernel indicates\n",
-    "        # that we will provide a precomputed kernel matrix instead of calculating it internally.\n",
-    "        kernel_pca_q = KernelPCA(n_components=self.n_pca, kernel=\"precomputed\")\n",
-    "\n",
-    "        # Fit KernelPCA on the precomputed kernel matrix and transform the training data.\n",
-    "        # This step reduces the dimensionality of the training data to the specified number of components.\n",
-    "        train_features_q = kernel_pca_q.fit_transform(matrix_train)\n",
-    "        logits_pca = torch.tensor(train_features_q,dtype=torch.double)\n",
-    "\n",
-    "        out = self.decoder(logits_pca).to(torch.float64) # The data are decoded back to 64 dimensions\n",
-    "\n",
-    "\n",
-    "        return out\n",
-    "\n",
-    "\n",
-    "\n",
-    "\n",
-    "    def forward_2(self, x):\n",
-    "        # Here we are stopping on the reduced weights before the KernelPCA. The output neurons of this method will be the input for the VQC\n",
-    "        x = self.input(x)\n",
-    "\n",
-    "\n",
-    "\n",
-    "\n",
-    "        return x"
-   ]
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 3 (ipykernel)",
-   "language": "python",
-   "name": "python3"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 3
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython3",
-   "version": "3.11.4"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 5
-}
+# -*- coding: utf-8 -*-
+"""
+Created on Mon Jul 29 13:11:13 2024
+
+@author: katerina
+"""
+
+
+# define the NN architecture
+class PQAE(nn.Module):
+    def __init__(self,input_dim,n_qubits,n_pca):
+        super(PQAE, self).__init__()
+
+        self.input_dim = input_dim
+        self.n_qubits = n_qubits
+        self.n_pca = n_pca
+
+        ## encoder ##
+        self.input = nn.Linear(self.input_dim, self.n_qubits, dtype=torch.float64)
+
+        ## decoder ##
+        self.decoder = nn.Linear(self.n_pca,self.input_dim, dtype=torch.float64)
+
+
+        # Define the qubit states as column vectors
+        self.q0 = torch.tensor([[1], [0]], dtype=torch.cfloat)
+        self.q1 = torch.tensor([[0], [1]], dtype=torch.cfloat)
+
+        # Define the Pauli matrices
+        self.sigma1 = torch.tensor([[1, 0], [0, 1]], dtype=torch.complex64)
+        self.sigma2 = torch.tensor([[0, 1], [1, 0]], dtype=torch.complex64)
+        self.sigma3 = torch.tensor([[0, -1j], [1j, 0]], dtype=torch.complex64)
+        self.sigma4 = torch.tensor([[1, 0], [0, -1]], dtype=torch.complex64)
+
+        self.hadamard_gate = 1 / torch.sqrt(torch.tensor(2) ) * torch.tensor([[1, 1], [1, -1]], dtype=torch.complex64)
+
+        # Define the CNOT gate
+        self.cnot_gate = torch.tensor([[1, 0, 0, 0],
+                                       [0, 1, 0, 0],
+                                       [0, 0, 0, 1],
+                                       [0, 0, 1, 0]], dtype=torch.complex64)
+
+
+
+        # Collect the Pauli matrices in a list
+        self.generators = [ self.sigma2, self.sigma3, self.sigma4 ]
+
+
+
+    def forward(self, x):
+        # define feedforward behavior
+        x = self.input(x)    # Here the data are reduced from 64 to 4, which is the number of qubits
+
+        sampler = Sampler()     # Initialize a sampler which samples from the quantum circuit.
+        fidelity = ComputeUncompute(sampler=sampler) # ComputeUncompute is a method that uses the compute-uncompute technique to estimate the fidelity.
+
+        # The ZZFeatureMap maps classical data to a quantum state. The 'feature_dimension' parameter specifies the
+        # dimensionality of the input data, and 'reps' indicates the number of repetitions of the feature map.
+        feature_map = ZZFeatureMap(feature_dimension=self.n_qubits, reps=1)
+
+        # Initialize the quantum kernel with the specified fidelity computation method and feature map.
+        # The FidelityQuantumKernel calculates the kernel matrix for quantum data using the fidelity metric.
+        qpca_kernel = FidelityQuantumKernel(fidelity=fidelity, feature_map=feature_map)
+
+        # Evaluate the kernel matrix for the training data.
+        # x.detach().numpy() converts the input tensor 'x' to a numpy array.
+        matrix_train = qpca_kernel.evaluate(x_vec=x.detach().numpy())
+
+        # Initialize KernelPCA with the number of components and kernel type.
+        # KernelPCA is a variant of Principal Component Analysis that uses kernel methods to perform
+        # dimensionality reduction in high-dimensional feature spaces. The 'precomputed' kernel indicates
+        # that we will provide a precomputed kernel matrix instead of calculating it internally.
+        kernel_pca_q = KernelPCA(n_components=self.n_pca, kernel="precomputed")
+
+        # Fit KernelPCA on the precomputed kernel matrix and transform the training data.
+        # This step reduces the dimensionality of the training data to the specified number of components.
+        train_features_q = kernel_pca_q.fit_transform(matrix_train)
+        logits_pca = torch.tensor(train_features_q,dtype=torch.double)
+
+        out = self.decoder(logits_pca).to(torch.float64) # The data are decoded back to 64 dimensions
+
+
+        return out
+
+
+
+
+    def forward_2(self, x):
+        # Here we are stopping on the reduced weights before the KernelPCA. The output neurons of this method will be the input for the VQC
+        x = self.input(x)
+
+
+
+
+        return x
